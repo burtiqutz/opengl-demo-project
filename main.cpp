@@ -27,6 +27,10 @@
 
 #include <iostream>
 
+//	text rendering
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
 int glWindowWidth = 1024;
 int glWindowHeight = 768;
 int retina_width, retina_height;
@@ -41,12 +45,14 @@ GLuint projectionLoc;
 glm::mat3 normalMatrix;
 GLuint normalMatrixLoc;
 
+//	sun vars
 bool isSunOn;
 glm::vec3 lightDir;
 GLuint lightDirLoc;
 glm::vec3 lightColor;
 GLuint lightColorLoc;
 
+//	position light vars
 bool isPosOn;
 glm::vec3 lightPos;
 GLuint lightPosLoc;
@@ -57,13 +63,24 @@ gps::Camera myCamera(
 				glm::vec3(0.0f, 0.0f, 2.5f),
 				glm::vec3(0.0f, 0.0f, -10.0f),
 				glm::vec3(0.0f, 1.0f, 0.0f));
-float cameraSpeed = 0.01f;
+float cameraSpeed = 1.f;
+float delta = 0.0f;
 
 bool pressedKeys[1024];
 float angleY = 0.0f;
 
+//	mouse movement vars
+float lastX = retina_width / 2, lastY = retina_height / 2;
+constexpr float SENSITIVITY = 0.1f;
+float pitch = 0.0f;
+float yaw = -90.0f;
+bool firstMouse = true;
+
 gps::Model3D myModel;
 gps::Shader myCustomShader;
+
+bool wireframe = false;
+bool flatShading = false;
 
 GLenum glCheckError_(const char *file, int line) {
 	GLenum errorCode;
@@ -129,13 +146,17 @@ void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int
 	if (key == GLFW_KEY_P && action == GLFW_PRESS || key == GLFW_KEY_G && action == GLFW_PRESS) {
 		processLights();
 	}
+	if (key == GLFW_KEY_T && action == GLFW_PRESS) {
+		wireframe = !wireframe;
+		if (wireframe) {
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		} else {
+			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		}
+	}
 }
 
-float lastX = retina_width / 2, lastY = retina_height / 2;
-constexpr float SENSITIVITY = 0.1f;
-float pitch = 0.0f;
-float yaw = -90.0f;
-bool firstMouse = true;
+
 void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
 	if (firstMouse) {
 		lastX = (float)xpos;
@@ -155,10 +176,12 @@ void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
 	myCamera.rotate(pitch, yaw);
 }
 
+float rotationSpeed = 100.f;
+
 void processMovement()
 {
 	if (pressedKeys[GLFW_KEY_Q]) {
-		angleY -= 1.0f;
+		angleY -= rotationSpeed * delta;
 		model = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
 		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
@@ -166,7 +189,7 @@ void processMovement()
 	}
 
 	if (pressedKeys[GLFW_KEY_E]) {
-		angleY += 1.0f;
+		angleY += rotationSpeed * delta;
 		model = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
 		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
@@ -174,7 +197,7 @@ void processMovement()
 	}
 
 	if (pressedKeys[GLFW_KEY_W]) {
-		myCamera.move(gps::MOVE_FORWARD, cameraSpeed);
+		myCamera.move(gps::MOVE_FORWARD, delta);
 		view = myCamera.getViewMatrix();
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
@@ -183,7 +206,7 @@ void processMovement()
 	}
 
 	if (pressedKeys[GLFW_KEY_S]) {
-		myCamera.move(gps::MOVE_BACKWARD, cameraSpeed);
+		myCamera.move(gps::MOVE_BACKWARD, delta);
 		view = myCamera.getViewMatrix();
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
@@ -192,7 +215,7 @@ void processMovement()
 	}
 
 	if (pressedKeys[GLFW_KEY_A]) {
-		myCamera.move(gps::MOVE_LEFT, cameraSpeed);
+		myCamera.move(gps::MOVE_LEFT, delta);
 		view = myCamera.getViewMatrix();
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
@@ -201,7 +224,7 @@ void processMovement()
 	}
 
 	if (pressedKeys[GLFW_KEY_D]) {
-		myCamera.move(gps::MOVE_RIGHT, cameraSpeed);
+		myCamera.move(gps::MOVE_RIGHT, delta);
 		view = myCamera.getViewMatrix();
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
@@ -210,8 +233,6 @@ void processMovement()
 	}
 
 }
-
-
 
 bool initOpenGLWindow()
 {
@@ -329,9 +350,31 @@ void initUniforms() {
 	glUniform3fv(posColorLoc, 1, glm::value_ptr(posColor));
 }
 
+float lastTimeStamp = glfwGetTime();
+int frameCount = 0;
+int lastFPSTime = 0;
+
 void renderScene() {
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	//	update delta vars
+	double currentTimeStamp = glfwGetTime();
+	double deltaTime = currentTimeStamp - lastTimeStamp;
+	lastTimeStamp = currentTimeStamp;
+	delta = static_cast<float>(deltaTime * cameraSpeed);
+
+	frameCount++;
+
+	// calculate FPS every 1 second
+	if (currentTimeStamp - lastFPSTime >= 1.0) {
+		double fps = (double)frameCount / (currentTimeStamp - lastFPSTime);
+
+		std::cout << "FPS: " << fps << std::endl;
+
+		lastFPSTime = currentTimeStamp;
+		frameCount = 0;
+	}
 
 	glm::mat4 view = myCamera.getViewMatrix();
 	//send matrix data to shader
@@ -340,7 +383,6 @@ void renderScene() {
 	normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
 	glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
 	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
-
 
 	myModel.Draw(myCustomShader);
 }
