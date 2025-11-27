@@ -28,6 +28,10 @@ uniform sampler2D diffuseTexture;
 uniform sampler2D specularTexture;
 in vec2 fragTexCoords;
 
+//shadows
+uniform sampler2D shadowMap;
+in vec4 fragPosLightSpace;
+
 void computeDirectionalLight(){
     vec3 cameraPosEye = vec3(0.0f);//in eye coordinates, the viewer is situated at the origin
     vec3 normalEye = normalize(fNormal);
@@ -88,17 +92,28 @@ void computeLightComponents()
     computePositionalLight();
 }
 
+float computeShadow(){
+    vec3 normalizedCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    normalizedCoords = normalizedCoords * 0.5 + 0.5;
+    if (normalizedCoords.z > 1.0f)
+    return 0.0f;
+    float closestDepth = texture(shadowMap, normalizedCoords.xy).r;
+    float currentDepth = normalizedCoords.z;
+    float bias = 0.005f;
+    float shadow = currentDepth - bias > closestDepth ? 1.0f : 0.0f;
+    return shadow;
+}
+
 void main()
 {
     computeLightComponents();
-
-    vec3 baseColor = vec3(0.9f, 0.35f, 0.0f);//orange
 
     //	we dont use alpha blending, use just rgb values
     ambient *= texture(diffuseTexture, fragTexCoords).rgb;
     diffuse *= texture(diffuseTexture, fragTexCoords).rgb;
     specular *= texture(specularTexture, fragTexCoords).rgb;
-    vec3 color = min((ambient + diffuse) + specular, 1.0f);
+    float shadow = computeShadow();
+    vec3 color = min((ambient + (1.f - shadow) * diffuse) + (1.f - shadow) * specular, 1.0f);
 
     fColor = vec4(color, 1.0f);
 }

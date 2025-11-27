@@ -27,10 +27,6 @@
 
 #include <iostream>
 
-//	text rendering
-#include <ft2build.h>
-#include FT_FREETYPE_H
-
 int glWindowWidth = 1024;
 int glWindowHeight = 768;
 int retina_width, retina_height;
@@ -51,6 +47,12 @@ glm::vec3 lightDir;
 GLuint lightDirLoc;
 glm::vec3 lightColor;
 GLuint lightColorLoc;
+
+//	shadow vars
+const unsigned int SHADOW_WIDTH = 2048;
+const unsigned int SHADOW_HEIGHT = 2048;
+GLuint shadowMapFBO;
+GLuint depthMapTexture;
 
 //	position light vars
 bool isPosOn;
@@ -76,8 +78,10 @@ float pitch = 0.0f;
 float yaw = -90.0f;
 bool firstMouse = true;
 
-gps::Model3D myModel;
+gps::Model3D teapot;
+gps::Model3D ground;
 gps::Shader myCustomShader;
+gps::Shader depthShader;
 
 bool wireframe = false;
 bool flatShading = false;
@@ -253,7 +257,7 @@ bool initOpenGLWindow()
 	glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
 
 	//for antialising
-	glfwWindowHint(GLFW_SAMPLES, 4);
+	glfwWindowHint(GLFW_SAMPLES, 8);
 
 	glWindow = glfwCreateWindow(glWindowWidth, glWindowHeight, "OpenGL Shader Example", NULL, NULL);
 	if (!glWindow) {
@@ -304,12 +308,15 @@ void initOpenGLState()
 }
 
 void initObjects() {
-	myModel.LoadModel("models/teapot/teapot20segUT.obj", "models/teapot/");
+	teapot.LoadModel("models/teapot/teapot20segUT.obj", "models/teapot/");
+	ground.LoadModel("models/ground/ground.obj", "models/ground/");
 }
 
 void initShaders() {
 	myCustomShader.loadShader("shaders/basic.vert", "shaders/basic.frag");
 	myCustomShader.useShaderProgram();
+	depthShader.loadShader("shaders/depthMap.vert", "shaders/depthMap.frag");
+	depthShader.useShaderProgram();
 }
 
 void initUniforms() {
@@ -350,6 +357,70 @@ void initUniforms() {
 	glUniform3fv(posColorLoc, 1, glm::value_ptr(posColor));
 }
 
+void initFBO() {
+	glGenFramebuffers(1, &shadowMapFBO);
+	//	create depth texture for fbo
+	glGenTextures(1, &depthMapTexture);
+	glBindTexture(GL_TEXTURE_2D, depthMapTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+				SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	//	attach texture to FBO
+	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMapTexture, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	//	unbind until we are ready to use
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+glm::mat4 computeLightSpaceTrMatrix() {
+	//	move the "sun" far away so it can capture everything in the scene
+	glm::vec3 lightPosition = lightDir * 20.0f;
+
+	glm::mat4 lightView = glm::lookAt(lightPosition, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+	const GLfloat near_plane = 0.1f, far_plane = 50.0f;
+	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+
+	glm::mat4 lightSpaceTrMatrix = lightProjection * lightView;
+	return lightSpaceTrMatrix;
+}
+
+void drawObjects(gps::Shader shader, bool depthPass) {
+
+	shader.useShaderProgram();
+
+	model = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
+	glUniformMatrix4fv(glGetUniformLocation(shader.shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
+
+	// do not send the normal matrix if we are rendering in the depth map
+	if (!depthPass) {
+		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
+		glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+	}
+
+	teapot.Draw(shader);
+
+	//	move ground
+	model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f));
+	model = glm::scale(model, glm::vec3(0.5f));
+	glUniformMatrix4fv(glGetUniformLocation(shader.shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
+
+	// do not send the normal matrix if we are rendering in the depth map
+	if (!depthPass) {
+		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
+		glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+	}
+
+	ground.Draw(shader);
+}
+
 float lastTimeStamp = glfwGetTime();
 int frameCount = 0;
 int lastFPSTime = 0;
@@ -375,6 +446,21 @@ void renderScene() {
 		lastFPSTime = currentTimeStamp;
 		frameCount = 0;
 	}
+	depthShader.useShaderProgram();
+
+	//	send light transform matrix
+	glUniformMatrix4fv(glGetUniformLocation(depthShader.shaderProgram, "lightSpaceTrMatrix"),
+		1,
+		GL_FALSE,
+		glm::value_ptr(computeLightSpaceTrMatrix()));
+	//	configure viewport and bind fbo
+	glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+	glClear(GL_DEPTH_BUFFER_BIT);
+	drawObjects(depthShader, true);
+
+	//	unbind
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	glm::mat4 view = myCamera.getViewMatrix();
 	//send matrix data to shader
@@ -384,7 +470,41 @@ void renderScene() {
 	glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
 	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
 
-	myModel.Draw(myCustomShader);
+	//	second render pass
+	glViewport(0, 0, retina_width, retina_height);
+	//	clear buffers
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	myCustomShader.useShaderProgram();
+
+	//	send view and projection
+	view = myCamera.getViewMatrix();
+	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+
+	normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
+	glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+	//	send light direction location relative to camera
+	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::mat3(view) * lightDir));
+
+	// transform the world pos to eye Space using the view matrix
+	glm::vec4 lightPosEye = view * glm::vec4(lightPos, 1.0f);
+	glUniform3fv(lightPosLoc, 1, glm::value_ptr(glm::vec3(lightPosEye)));
+
+	projection = glm::perspective(glm::radians(45.0f), (float)retina_width / (float)retina_height, 0.1f, 1000.0f);
+	glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+	//	send light colors every frame
+	glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
+	glUniform3fv(posColorLoc, 1, glm::value_ptr(posColor));
+
+	//	bind shadow map
+	glActiveTexture(GL_TEXTURE3);
+	glBindTexture(GL_TEXTURE_2D, depthMapTexture);
+	glUniform1i(glGetUniformLocation(myCustomShader.shaderProgram, "shadowMap"), 3);
+	glUniformMatrix4fv(glGetUniformLocation(myCustomShader.shaderProgram, "lightSpaceTrMatrix"),
+			1,
+			GL_FALSE,
+			glm::value_ptr(computeLightSpaceTrMatrix()));
+	drawObjects(myCustomShader, false);
 }
 
 void cleanup() {
@@ -405,6 +525,7 @@ int main(int argc, const char * argv[]) {
 	initObjects();
 	initShaders();
 	initUniforms();
+	initFBO();
 
 	while (!glfwWindowShouldClose(glWindow)) {
 		processMovement();
