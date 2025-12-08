@@ -3,5 +3,6 @@ project(opengl_demo_project)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(opengl_demo_project main.cpp Mesh.cpp Model3D.cpp Shader.cpp stb_image.cpp tiny_obj_loader.cpp Camera.cpp Window.cpp)
+add_executable(opengl_demo_project main.cpp Mesh.cpp Model3D.cpp Shader.cpp stb_image.cpp tiny_obj_loader.cpp Camera.cpp
+        Window.cpp SkyBox.cpp)
 target_link_libraries(opengl_demo_project glfw GL GLEW)

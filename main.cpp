@@ -24,6 +24,7 @@
 #include "Shader.hpp"
 #include "Model3D.hpp"
 #include "Camera.hpp"
+#include "SkyBox.hpp"
 
 #include <iostream>
 
@@ -47,10 +48,11 @@ glm::vec3 lightDir;
 GLuint lightDirLoc;
 glm::vec3 lightColor;
 GLuint lightColorLoc;
+glm::mat4 lightRotation;
 
 //	shadow vars
-const unsigned int SHADOW_WIDTH = 2048;
-const unsigned int SHADOW_HEIGHT = 2048;
+const unsigned int SHADOW_WIDTH = 4092;
+const unsigned int SHADOW_HEIGHT = 4092;
 GLuint shadowMapFBO;
 GLuint depthMapTexture;
 
@@ -61,11 +63,16 @@ GLuint lightPosLoc;
 glm::vec3 posColor;
 GLuint posColorLoc;
 
+//	skybox vars
+std::vector<const GLchar*> faces;
+gps::SkyBox mySkyBox;
+gps::Shader skyboxShader;
+
 gps::Camera myCamera(
 				glm::vec3(0.0f, 0.0f, 2.5f),
 				glm::vec3(0.0f, 0.0f, -10.0f),
 				glm::vec3(0.0f, 1.0f, 0.0f));
-float cameraSpeed = 1.f;
+float cameraSpeed = 2.f;
 float delta = 0.0f;
 
 bool pressedKeys[1024];
@@ -80,6 +87,7 @@ bool firstMouse = true;
 
 gps::Model3D teapot;
 gps::Model3D ground;
+gps::Model3D test;
 gps::Shader myCustomShader;
 gps::Shader depthShader;
 
@@ -186,54 +194,26 @@ void processMovement()
 {
 	if (pressedKeys[GLFW_KEY_Q]) {
 		angleY -= rotationSpeed * delta;
-		model = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
-		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
-		glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
 	}
 
 	if (pressedKeys[GLFW_KEY_E]) {
 		angleY += rotationSpeed * delta;
-		model = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
-		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
-		glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
 	}
 
 	if (pressedKeys[GLFW_KEY_W]) {
 		myCamera.move(gps::MOVE_FORWARD, delta);
-		view = myCamera.getViewMatrix();
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
-		glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
-		glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
 	}
 
 	if (pressedKeys[GLFW_KEY_S]) {
 		myCamera.move(gps::MOVE_BACKWARD, delta);
-		view = myCamera.getViewMatrix();
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
-		glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
-		glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
 	}
 
 	if (pressedKeys[GLFW_KEY_A]) {
 		myCamera.move(gps::MOVE_LEFT, delta);
-		view = myCamera.getViewMatrix();
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
-		glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
-		glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
-	}
+	 }
 
 	if (pressedKeys[GLFW_KEY_D]) {
 		myCamera.move(gps::MOVE_RIGHT, delta);
-		view = myCamera.getViewMatrix();
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
-		glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
-		glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
 	}
 
 }
@@ -310,6 +290,7 @@ void initOpenGLState()
 void initObjects() {
 	teapot.LoadModel("models/teapot/teapot20segUT.obj", "models/teapot/");
 	ground.LoadModel("models/ground/ground.obj", "models/ground/");
+	//test.LoadModel("models/test/test.obj", "models/test/");
 }
 
 void initShaders() {
@@ -317,6 +298,8 @@ void initShaders() {
 	myCustomShader.useShaderProgram();
 	depthShader.loadShader("shaders/depthMap.vert", "shaders/depthMap.frag");
 	depthShader.useShaderProgram();
+	skyboxShader.loadShader("shaders/skyboxShader.vert", "shaders/skyboxShader.frag");
+	skyboxShader.useShaderProgram();
 }
 
 void initUniforms() {
@@ -379,15 +362,20 @@ void initFBO() {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+void initSkybox() {
+	faces.push_back("skybox/right.tga");
+	faces.push_back("skybox/left.tga");
+	faces.push_back("skybox/top.tga");
+	faces.push_back("skybox/bottom.tga");
+	faces.push_back("skybox/back.tga");
+	faces.push_back("skybox/front.tga");
+	mySkyBox.Load(faces);
+}
+
 glm::mat4 computeLightSpaceTrMatrix() {
-	//	move the "sun" far away so it can capture everything in the scene
-	glm::vec3 lightPosition = lightDir * 20.0f;
-
-	glm::mat4 lightView = glm::lookAt(lightPosition, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-	const GLfloat near_plane = 0.1f, far_plane = 50.0f;
-	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
-
+	glm::mat4 lightView = glm::lookAt(lightDir, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	constexpr GLfloat near_plane = 0.1f, far_plane = 6.0f;
+	glm::mat4 lightProjection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, near_plane, far_plane);
 	glm::mat4 lightSpaceTrMatrix = lightProjection * lightView;
 	return lightSpaceTrMatrix;
 }
@@ -419,6 +407,12 @@ void drawObjects(gps::Shader shader, bool depthPass) {
 	}
 
 	ground.Draw(shader);
+	// model = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
+	// if (!depthPass) {
+	// 	normalMatrix = glm::mat3(glm::inverseTranspose(view*model));
+	// 	glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+	// }
+	// test.Draw(shader);
 }
 
 float lastTimeStamp = glfwGetTime();
@@ -462,13 +456,7 @@ void renderScene() {
 	//	unbind
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-	glm::mat4 view = myCamera.getViewMatrix();
-	//send matrix data to shader
-	GLint viewLoc = glGetUniformLocation(myCustomShader.shaderProgram, "view");
-	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-	normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
-	glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
-	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
+
 
 	//	second render pass
 	glViewport(0, 0, retina_width, retina_height);
@@ -482,8 +470,10 @@ void renderScene() {
 
 	normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
 	glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+
 	//	send light direction location relative to camera
-	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::mat3(view) * lightDir));
+	//lightRotation = glm::rotate(glm::mat4(1.0f), glm::radians(lightAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)  )* lightDir));
 
 	// transform the world pos to eye Space using the view matrix
 	glm::vec4 lightPosEye = view * glm::vec4(lightPos, 1.0f);
@@ -505,6 +495,8 @@ void renderScene() {
 			GL_FALSE,
 			glm::value_ptr(computeLightSpaceTrMatrix()));
 	drawObjects(myCustomShader, false);
+
+	mySkyBox.Draw(skyboxShader, view, projection);
 }
 
 void cleanup() {
@@ -526,6 +518,7 @@ int main(int argc, const char * argv[]) {
 	initShaders();
 	initUniforms();
 	initFBO();
+	initSkybox();
 
 	while (!glfwWindowShouldClose(glWindow)) {
 		processMovement();

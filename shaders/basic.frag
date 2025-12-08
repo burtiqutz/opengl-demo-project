@@ -72,7 +72,7 @@ void computePositionalLight(){
 
 
     //compute ambient light
-    float dist = length(lightPos - fPosEye.xyz);	//	using lightDir as light Position
+    float dist = length(lightPos - fPosEye.xyz);
     float att = 1.f / (constant + linear * dist + quadratic*(dist*dist));
     ambient += att * ambientStrength * posColor;
 
@@ -99,7 +99,7 @@ float computeShadow(){
     return 0.0f;
     float closestDepth = texture(shadowMap, normalizedCoords.xy).r;
     float currentDepth = normalizedCoords.z;
-    float bias = 0.005f;
+    float bias = 0.002f;
     float shadow = currentDepth - bias > closestDepth ? 1.0f : 0.0f;
     return shadow;
 }
