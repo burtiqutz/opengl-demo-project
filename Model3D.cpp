@@ -46,6 +46,14 @@ namespace gps {
 		std::cout << "# of shapes    : " << shapes.size() << std::endl;
 		std::cout << "# of materials : " << materials.size() << std::endl;
 
+		//	Init min/max values for AABB bounding box
+		float minX = std::numeric_limits<float>::max(),
+			  minY = std::numeric_limits<float>::max(),
+		      minZ = std::numeric_limits<float>::max();
+		float maxX = std::numeric_limits<float>::min(),
+			  maxY = std::numeric_limits<float>::min(),
+			  maxZ = std::numeric_limits<float>::min();
+
 		// Loop over shapes
 		for (size_t s = 0; s < shapes.size(); s++) {
 
@@ -76,6 +84,13 @@ namespace gps {
 					float nz = attrib.normals[3 * idx.normal_index + 2];
 					float tx = 0.0f;
 					float ty = 0.0f;
+					//	Compute AABB bounds
+					if (vx < minX) minX = vx;
+					if (vx > maxX) maxX = vx;
+					if (vy < minY) minY = vy;
+					if (vy > maxY) maxY = vy;
+					if (vz < minZ) minZ = vz;
+					if (vz > maxZ) maxZ = vz;
 
 					if (idx.texcoord_index != -1) {
 
@@ -148,6 +163,9 @@ namespace gps {
 
 			meshes.push_back(gps::Mesh(vertices, indices, textures));
 		}
+		//	Save bounding box data
+		this->aabb.min = glm::vec3(minX, minY, minZ);
+		this->aabb.max = glm::vec3(maxX, maxY, maxZ);
 	}
 
 	// Retrieves a texture associated with the object - by its name and type

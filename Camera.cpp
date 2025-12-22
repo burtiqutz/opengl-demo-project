@@ -52,4 +52,21 @@ namespace gps {
         cameraRightDirection = glm::normalize(glm::cross(cameraFrontDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
         cameraUpDirection = glm::normalize(glm::cross(cameraRightDirection, cameraFrontDirection));
     }
+    BoundingBox Camera::GetPlayerBox() {
+        BoundingBox box;
+
+        box.min = cameraPosition - glm::vec3(PLAYER_WIDTH / 2.0f, EYE_HEIGHT, PLAYER_WIDTH / 2.0f);
+
+        float headOffset = PLAYER_HEIGHT - EYE_HEIGHT;
+
+        box.max = cameraPosition + glm::vec3(PLAYER_WIDTH / 2.0f, headOffset, PLAYER_WIDTH / 2.0f);
+
+        return box;
+    }
+
+    void Camera::setPosition(const glm::vec3& position) {
+        cameraPosition = position;
+        cameraTarget = cameraPosition + cameraFrontDirection;
+    }
+
 }

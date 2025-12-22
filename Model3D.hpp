@@ -12,6 +12,11 @@
 
 namespace gps {
 
+	struct BoundingBox {
+		glm::vec3 min;
+		glm::vec3 max;
+	};
+
     class Model3D {
 
     public:
@@ -23,11 +28,15 @@ namespace gps {
 
 		void Draw(gps::Shader shaderProgram);
 
+    	BoundingBox GetBoundingBox() const { return aabb; }
+
     private:
 		// Component meshes - group of objects
         std::vector<gps::Mesh> meshes;
 		// Associated textures
         std::vector<gps::Texture> loadedTextures;
+    	//	Bounding box
+    	BoundingBox aabb;
 
 		// Does the parsing of the .obj file and fills in the data structure
 		void ReadOBJ(std::string fileName, std::string basePath);
