@@ -1,8 +1,9 @@
 //
-//  main.cpp with General Collision System
-//  OpenGL Advances Lighting
+//  OpenGL with Basic Collision System
+//  Blinn-Phong lighting model
 //
 
+#include <tgmath.h>
 #if defined (__APPLE__)
 	#define GLFW_INCLUDE_GLCOREARB
 	#define GL_SILENCE_DEPRECATION
@@ -55,7 +56,7 @@ GLuint depthMapTexture;
 bool isPosOn;
 glm::vec3 lightPos;
 GLuint lightPosLoc;
-glm::vec3 posColor;
+glm::vec3 posColor = glm::vec3(0.8f, 0.25f, 0.1f);
 GLuint posColorLoc;
 
 std::vector<const GLchar*> faces;
@@ -78,10 +79,14 @@ float pitch = 0.0f;
 float yaw = -90.0f;
 bool firstMouse = true;
 
+bool isCinematic = false;
+float cinematicTime;
+
 // Models
-gps::Model3D teapot;
-gps::Model3D ground;
-gps::Model3D test;
+gps::Model3D teapot;	//	for showcasing collisions
+gps::Model3D ground;	//	for showcasing collisions
+gps::Model3D snow_town;
+gps::Model3D campfire;
 
 gps::Shader myCustomShader;
 gps::Shader depthShader;
@@ -155,23 +160,35 @@ void initSceneObjects() {
     sceneObjects.clear();
 
     // Teapot
-    glm::mat4 teapotModel = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
-    sceneObjects.emplace_back(&teapot, teapotModel, "Teapot", true);
+    // glm::mat4 teapotModel = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
+    // sceneObjects.emplace_back(&teapot, teapotModel, "Teapot", true);
+    //
+    // // Ground
+    // glm::mat4 groundModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f));
+    // groundModel = glm::scale(groundModel, glm::vec3(0.5f));
+    // sceneObjects.emplace_back(&ground, groundModel, "Ground", true);
 
-    // Ground
-    glm::mat4 groundModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f));
-    groundModel = glm::scale(groundModel, glm::vec3(0.5f));
-    sceneObjects.emplace_back(&ground, groundModel, "Ground", true);
+	//	Cottage
+	// glm::mat4 cottageModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.f, 5.f));
+	// cottageModel = glm::scale(cottageModel, glm::vec3(0.02f));
+	// sceneObjects.emplace_back(&snow_cottage, cottageModel, "SnowCottage", false);
 
-    // Add more objects here as you create them:
-    // Example walls, buildings, trees, etc.
+    //	Town scene
+	glm::mat4 townModel = glm::translate(glm::mat4(1.0f), glm::vec3(-10.0f, 0.0f, 2.0f));
+	townModel = glm::scale(townModel, glm::vec3(4.f));
+	sceneObjects.emplace_back(&snow_town, townModel, "snow_town", false);
+
+	//	Campfire
+	glm::mat4 campfireModel = glm::translate(glm::mat4(1.0f), glm::vec3(3.7f, -0.85f, 0.25f));
+	campfireModel = glm::scale(campfireModel, glm::vec3(0.05f));
+	sceneObjects.emplace_back(&campfire, campfireModel, "campfire", true);
 }
 
 void updateSceneObjects() {
     // Update teapot rotation
-    if (!sceneObjects.empty()) {
-        sceneObjects[0].modelMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
-    }
+    // if (!sceneObjects.empty()) {
+    //     sceneObjects[0].modelMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
+    // }
 
     // Update other dynamic objects here
 }
@@ -221,7 +238,7 @@ void processLights() {
 			posColor = glm::vec3(0.f, 0.f, 0.f);
 		} else {
 			isPosOn = true;
-			posColor = glm::vec3(1.f, 1.f, 1.f);
+			posColor = glm::vec3(5.0f, 2.5f, 0.5f);
 		}
 		glUniform3fv(posColorLoc, 1, glm::value_ptr(posColor));
 	}
@@ -231,7 +248,7 @@ void processLights() {
 			lightColor = glm::vec3(0.f, 0.f, 0.f);
 		} else {
 			isSunOn = true;
-			lightColor = glm::vec3(1.f, 1.f, 1.f);
+			lightColor = glm::vec3(0.1f, 0.1f, 0.15f);
 		}
 		glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
 	}
@@ -259,6 +276,16 @@ void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int
 			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 		}
 	}
+	if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+		isCinematic = !isCinematic;
+		if (isCinematic) {
+			std::cout << "Cinematic mode on" << std::endl;
+			cinematicTime = 0;
+		} else {
+			std::cout << "Cinematic mode off" << std::endl;
+			firstMouse = true;
+		}
+	}
 }
 
 void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
@@ -280,43 +307,53 @@ void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 float rotationSpeed = 100.f;
+float animationSpeed = 0.01f;
 
 void processMovement() {
-	glm::vec3 previousPosition = myCamera.getPosition();
+	//	Cinematic pan across the scene
+	if (isCinematic) {
+		float zPos = 40.0f - (cinematicTime * 1.5f);
+		cinematicTime += animationSpeed;
+		myCamera.setPosition(glm::vec3(15.0f, 12.0f, zPos));
+		myCamera.rotate(-25.0f, -90.0f);
+	} else {
+		//	Actual movement processing
+		glm::vec3 previousPosition = myCamera.getPosition();
 
-	if (pressedKeys[GLFW_KEY_Q]) {
-		angleY -= rotationSpeed * delta;
-	}
+		if (pressedKeys[GLFW_KEY_Q]) {
+			angleY -= rotationSpeed * delta;
+		}
 
-	if (pressedKeys[GLFW_KEY_E]) {
-		angleY += rotationSpeed * delta;
-	}
+		if (pressedKeys[GLFW_KEY_E]) {
+			angleY += rotationSpeed * delta;
+		}
 
-	if (pressedKeys[GLFW_KEY_W]) {
-		myCamera.move(gps::MOVE_FORWARD, delta);
-	}
+		if (pressedKeys[GLFW_KEY_W]) {
+			myCamera.move(gps::MOVE_FORWARD, delta);
+		}
 
-	if (pressedKeys[GLFW_KEY_S]) {
-		myCamera.move(gps::MOVE_BACKWARD, delta);
-	}
+		if (pressedKeys[GLFW_KEY_S]) {
+			myCamera.move(gps::MOVE_BACKWARD, delta);
+		}
 
-	if (pressedKeys[GLFW_KEY_A]) {
-		myCamera.move(gps::MOVE_LEFT, delta);
-	}
+		if (pressedKeys[GLFW_KEY_A]) {
+			myCamera.move(gps::MOVE_LEFT, delta);
+		}
 
-	if (pressedKeys[GLFW_KEY_D]) {
-		myCamera.move(gps::MOVE_RIGHT, delta);
-	}
+		if (pressedKeys[GLFW_KEY_D]) {
+			myCamera.move(gps::MOVE_RIGHT, delta);
+		}
 
-	// Update dynamic objects
-	updateSceneObjects();
+		// Update dynamic objects
+		updateSceneObjects();
 
-	// Check collision
-	gps::BoundingBox playerBox = myCamera.GetPlayerBox();
-	std::string collidedObject;
+		// Check collision
+		gps::BoundingBox playerBox = myCamera.GetPlayerBox();
+		std::string collidedObject;
 
-	if (checkPlayerCollision(playerBox, &collidedObject)) {
-		myCamera.setPosition(previousPosition);
+		if (checkPlayerCollision(playerBox, &collidedObject)) {
+			myCamera.setPosition(previousPosition);
+		}
 	}
 }
 
@@ -376,6 +413,8 @@ void initOpenGLState() {
 void initObjects() {
 	teapot.LoadModel("models/teapot/teapot20segUT.obj", "models/teapot/");
 	ground.LoadModel("models/ground/ground.obj", "models/ground/");
+	snow_town.LoadModel("models/snow_town/snow_town.obj", "models/snow_town/");
+	campfire.LoadModel("models/campfire/campfire.obj", "models/campfire/");
 	// Initialize scene objects after loading models
 	initSceneObjects();
 
@@ -415,15 +454,15 @@ void initUniforms() {
 	lightDirLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightDir");
 	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
 
-	lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+	lightColor = glm::vec3(0.1f, 0.1f, 0.15f);
 	lightColorLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightColor");
 	glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
 
-	lightPos = glm::vec3(0.0f, 0.0f, 5.0f);
+	lightPos = glm::vec3(3.7f, 0.5f, 0.25f);	//	Slightly above actual campfire
 	lightPosLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightPos");
 	glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
 
-	posColor = glm::vec3(1.0f, 1.0f, 1.0f);
+	posColor = glm::vec3(5.0f, 2.5f, 0.5f);
 	posColorLoc = glGetUniformLocation(myCustomShader.shaderProgram, "posColor");
 	glUniform3fv(posColorLoc, 1, glm::value_ptr(posColor));
 }
@@ -458,9 +497,19 @@ void initSkybox() {
 }
 
 glm::mat4 computeLightSpaceTrMatrix() {
-	glm::mat4 lightView = glm::lookAt(lightDir, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	constexpr GLfloat near_plane = 0.1f, far_plane = 6.0f;
-	glm::mat4 lightProjection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, near_plane, far_plane);
+	glm::vec3 lightPosition = lightDir * 20.0f; // Move light back
+	glm::mat4 lightView = glm::lookAt(lightPosition, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+
+	constexpr GLfloat orthoSize = 20.0f;
+	constexpr GLfloat near_plane = 0.1f;
+	constexpr GLfloat far_plane = 150.0f;
+
+	glm::mat4 lightProjection = glm::ortho(
+		-orthoSize, orthoSize,
+		-orthoSize, orthoSize,
+		near_plane, far_plane
+	);
 	return lightProjection * lightView;
 }
 

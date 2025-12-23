@@ -18,8 +18,11 @@ float shininess = 32.0f;
 
 //needed for pos lighting, for attenuation
 float constant = 1.f;
-float linear = 0.0045f;
-float quadratic = 0.0075f;
+float linear = 0.7f;
+float quadratic = 1.f;
+vec3 ambientPoint = vec3(0.f);
+vec3 diffusePoint = vec3(0.f);
+vec3 specularPoint = vec3(0.f);
 uniform vec3 lightPos;
 uniform vec3 posColor;
 
@@ -74,16 +77,16 @@ void computePositionalLight(){
     //compute ambient light
     float dist = length(lightPos - fPosEye.xyz);
     float att = 1.f / (constant + linear * dist + quadratic*(dist*dist));
-    ambient += att * ambientStrength * posColor;
+    ambientPoint += att * ambientStrength * posColor;
 
     //compute diffuse light
-    diffuse += att * max(dot(normalEye, lightDirN), 0.0f) * posColor;
+    diffusePoint += att * max(dot(normalEye, lightDirN), 0.0f) * posColor;
 
     //compute specular light
 
     float specCoeff = pow(max(dot(normalEye, halfVector), 0.f), shininess);
 
-    specular += att * specularStrength * specCoeff * posColor;
+    specularPoint += att * specularStrength * specCoeff * posColor;
 }
 
 void computeLightComponents()
@@ -109,11 +112,19 @@ void main()
     computeLightComponents();
 
     //	we dont use alpha blending, use just rgb values
-    ambient *= texture(diffuseTexture, fragTexCoords).rgb;
-    diffuse *= texture(diffuseTexture, fragTexCoords).rgb;
-    specular *= texture(specularTexture, fragTexCoords).rgb;
-    float shadow = computeShadow();
-    vec3 color = min((ambient + (1.f - shadow) * diffuse) + (1.f - shadow) * specular, 1.0f);
+    vec3 texDiffuse = texture(diffuseTexture, fragTexCoords).rgb;
+    vec3 texSpecular = texture(specularTexture, fragTexCoords).rgb;
 
-    fColor = vec4(color, 1.0f);
+    float shadow = computeShadow();
+    vec3 lightingDir = (ambient + (1.0f - shadow) * diffuse) * texDiffuse +
+    ((1.0f - shadow) * specular) * texSpecular;
+
+    // Point lights
+    vec3 lightingPoint = (ambientPoint + diffusePoint) * texDiffuse +
+    (specularPoint) * texSpecular;
+
+    // 3. Combine them
+    vec3 finalColor = min(lightingDir + lightingPoint, 1.0f);
+
+    fColor = vec4(finalColor, 1.0f);
 }
