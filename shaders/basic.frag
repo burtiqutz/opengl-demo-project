@@ -16,15 +16,20 @@ vec3 specular = vec3(0.f);
 float specularStrength = 0.5f;
 float shininess = 32.0f;
 
-//needed for pos lighting, for attenuation
+//  Needed for pos lighting, for attenuation
+//  Multiple positional lights
+#define MAX_POINT_LIGHTS 10
+uniform int numPointLights;  // Actual number of lights active
+uniform vec3 pointLightPositions[MAX_POINT_LIGHTS];
+uniform vec3 pointLightColor;  //  Shared color
 float constant = 1.f;
-float linear = 0.7f;
-float quadratic = 1.f;
+float linear = 2.f;
+float quadratic = 4.f;
 vec3 ambientPoint = vec3(0.f);
 vec3 diffusePoint = vec3(0.f);
 vec3 specularPoint = vec3(0.f);
-uniform vec3 lightPos;
-uniform vec3 posColor;
+//uniform vec3 lightPos;
+//uniform vec3 posColor;
 
 //needed for light maps
 uniform sampler2D diffuseTexture;
@@ -58,7 +63,7 @@ void computeDirectionalLight(){
     specular += specularStrength * specCoeff * lightColor;
 }
 
-void computePositionalLight(){
+void computePositionalLight(vec3 lightPos){
     vec3 cameraPosEye = vec3(0.0f);//in eye coordinates, the viewer is situated at the origin
 
     //transform normal
@@ -77,22 +82,24 @@ void computePositionalLight(){
     //compute ambient light
     float dist = length(lightPos - fPosEye.xyz);
     float att = 1.f / (constant + linear * dist + quadratic*(dist*dist));
-    ambientPoint += att * ambientStrength * posColor;
+    ambientPoint += att * ambientStrength * pointLightColor;
 
     //compute diffuse light
-    diffusePoint += att * max(dot(normalEye, lightDirN), 0.0f) * posColor;
+    diffusePoint += att * max(dot(normalEye, lightDirN), 0.0f) * pointLightColor;
 
     //compute specular light
 
     float specCoeff = pow(max(dot(normalEye, halfVector), 0.f), shininess);
 
-    specularPoint += att * specularStrength * specCoeff * posColor;
+    specularPoint += att * specularStrength * specCoeff * pointLightColor;
 }
 
 void computeLightComponents()
 {
     computeDirectionalLight();
-    computePositionalLight();
+    for(int i = 0; i < numPointLights; i++){
+        computePositionalLight(pointLightPositions[i]);
+    }
 }
 
 float computeShadow(){
@@ -105,6 +112,14 @@ float computeShadow(){
     float bias = 0.002f;
     float shadow = currentDepth - bias > closestDepth ? 1.0f : 0.0f;
     return shadow;
+}
+
+float computeFog() {
+    float fogDensity = 0.025f;
+    float fragmentDistance = length(fPosEye);
+    float fogFactor = exp(-pow(fragmentDistance * fogDensity, 2));
+
+    return clamp(fogFactor, 0.0f, 1.0f);
 }
 
 void main()
@@ -123,8 +138,11 @@ void main()
     vec3 lightingPoint = (ambientPoint + diffusePoint) * texDiffuse +
     (specularPoint) * texSpecular;
 
-    // 3. Combine them
     vec3 finalColor = min(lightingDir + lightingPoint, 1.0f);
 
+    //  Un-comment this for fog, does not work on sky
+//    float fogFactor = computeFog();
+//    vec4 fogColor = vec4(0.5f, 0.5f, 0.5f, 1.0f);
+//    fColor = mix(fogColor, vec4(finalColor, 1.f), fogFactor);
     fColor = vec4(finalColor, 1.0f);
 }

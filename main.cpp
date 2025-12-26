@@ -27,8 +27,8 @@
 #include <vector>
 #include <string>
 
-int glWindowWidth = 1024;
-int glWindowHeight = 768;
+int glWindowWidth = 1280;
+int glWindowHeight = 960;
 int retina_width, retina_height;
 GLFWwindow* glWindow = NULL;
 
@@ -53,11 +53,20 @@ const unsigned int SHADOW_HEIGHT = 4092;
 GLuint shadowMapFBO;
 GLuint depthMapTexture;
 
+bool sprint = false;
+
 bool isPosOn;
-glm::vec3 lightPos;
-GLuint lightPosLoc;
-glm::vec3 posColor = glm::vec3(0.8f, 0.25f, 0.1f);
-GLuint posColorLoc;
+// glm::vec3 lightPos;
+// GLuint lightPosLoc;
+// glm::vec3 posColor = glm::vec3(5.0f, 2.5f, 0.5f);
+// GLuint posColorLoc;
+//	For multiple point lights
+const int MAX_POINT_LIGHTS = 10;
+std::vector<glm::vec3> pointLightPositions;
+glm::vec3 pointLightColor = glm::vec3(5.0f, 2.5f, 0.5f);
+int numActiveLights = 0;
+GLuint numPointLightsLoc;
+GLuint pointLightColorLoc;
 
 std::vector<const GLchar*> faces;
 gps::SkyBox mySkyBox;
@@ -232,23 +241,25 @@ void windowResizeCallback(GLFWwindow* window, int width, int height) {
 }
 
 void processLights() {
+	myCustomShader.useShaderProgram();
 	if (pressedKeys[GLFW_KEY_P]) {
+		isPosOn = !isPosOn;
+
 		if (isPosOn) {
-			isPosOn = false;
-			posColor = glm::vec3(0.f, 0.f, 0.f);
+			pointLightColor = glm::vec3(5.0f, 2.5f, 0.5f);
 		} else {
-			isPosOn = true;
-			posColor = glm::vec3(5.0f, 2.5f, 0.5f);
+			pointLightColor = glm::vec3(0.f, 0.f, 0.f);
 		}
-		glUniform3fv(posColorLoc, 1, glm::value_ptr(posColor));
+		glUniform3fv(pointLightColorLoc, 1, glm::value_ptr(pointLightColor));
 	}
+
 	if (pressedKeys[GLFW_KEY_G]) {
+		isSunOn = !isSunOn;
+
 		if (isSunOn) {
-			isSunOn = false;
-			lightColor = glm::vec3(0.f, 0.f, 0.f);
-		} else {
-			isSunOn = true;
 			lightColor = glm::vec3(0.1f, 0.1f, 0.15f);
+		} else {
+			lightColor = glm::vec3(0.f, 0.f, 0.f);
 		}
 		glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
 	}
@@ -281,10 +292,14 @@ void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int
 		if (isCinematic) {
 			std::cout << "Cinematic mode on" << std::endl;
 			cinematicTime = 0;
+			firstMouse = true;
 		} else {
 			std::cout << "Cinematic mode off" << std::endl;
 			firstMouse = true;
 		}
+	}
+	if (key == GLFW_KEY_LEFT_SHIFT && action == GLFW_PRESS) {
+		sprint = !sprint;
 	}
 }
 
@@ -310,6 +325,11 @@ float rotationSpeed = 100.f;
 float animationSpeed = 0.01f;
 
 void processMovement() {
+	if (sprint) {
+		cameraSpeed = 4.f;
+	} else {
+		cameraSpeed = 2.f;
+	}
 	//	Cinematic pan across the scene
 	if (isCinematic) {
 		float zPos = 40.0f - (cinematicTime * 1.5f);
@@ -357,6 +377,39 @@ void processMovement() {
 	}
 }
 
+void setupPointLights() {
+	pointLightPositions.clear();
+
+	pointLightPositions.push_back(glm::vec3(2.5f, 1.f, -1.f));	//	campfire, 1st one
+	pointLightPositions.push_back(glm::vec3(5.5f, 1.f, 0.f));		//	campfire, 2nd one
+	pointLightPositions.push_back(glm::vec3(18.0f, 0.5f, 6.0f));	//	front church, right
+	pointLightPositions.push_back(glm::vec3(10.0f, 0.5f, 6.0f));	//	front church, left
+	pointLightPositions.push_back(glm::vec3(8.0f, 0.3f, 13.0f));	//	side alley
+	pointLightPositions.push_back(glm::vec3(18.0f, 0.f, 12.5f));	//	front of tunnel
+	pointLightPositions.push_back(glm::vec3(16.0f, 0.f, 19.0f));	//	2nd area, in front of tunnel
+	pointLightPositions.push_back(glm::vec3(16.0f, 0.f, 24.0f));	//	2nd area, in front of tunnel, 2nd one
+	pointLightPositions.push_back(glm::vec3(20.0f, 0.f, 30.0f));	//	2nd area, in front of gate
+
+	numActiveLights = pointLightPositions.size();
+}
+
+void updatePointLights() {
+	myCustomShader.useShaderProgram();
+
+	// Update number of active lights
+	glUniform1i(numPointLightsLoc, numActiveLights);
+
+	// Transform light positions to eye space and send to shader
+	for (int i = 0; i < numActiveLights; i++) {
+		std::string uniformName = "pointLightPositions[" + std::to_string(i) + "]";
+		GLuint location = glGetUniformLocation(myCustomShader.shaderProgram, uniformName.c_str());
+
+		// Transform to eye space
+		glm::vec4 lightPosEye = view * glm::vec4(pointLightPositions[i], 1.0f);
+		glUniform3fv(location, 1, glm::value_ptr(glm::vec3(lightPosEye)));
+	}
+}
+
 bool initOpenGLWindow() {
 	if (!glfwInit()) {
 		fprintf(stderr, "ERROR: could not start GLFW3\n");
@@ -400,7 +453,7 @@ bool initOpenGLWindow() {
 }
 
 void initOpenGLState() {
-	glClearColor(0.3f, 0.3f, 0.3f, 1.0);
+	glClearColor(0.5, 0.5, 0.5, 1.0);
 	glViewport(0, 0, retina_width, retina_height);
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
@@ -432,39 +485,53 @@ void initShaders() {
 }
 
 void initUniforms() {
-	isSunOn = true;
-	isPosOn = true;
-	model = glm::mat4(1.0f);
-	modelLoc = glGetUniformLocation(myCustomShader.shaderProgram, "model");
-	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+    myCustomShader.useShaderProgram();  // Make sure shader is active!
 
-	view = myCamera.getViewMatrix();
-	viewLoc = glGetUniformLocation(myCustomShader.shaderProgram, "view");
-	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    isSunOn = true;
+    isPosOn = true;
 
-	normalMatrix = glm::mat3(glm::inverseTranspose(view*model));
-	normalMatrixLoc = glGetUniformLocation(myCustomShader.shaderProgram, "normalMatrix");
-	glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+    model = glm::mat4(1.0f);
+    modelLoc = glGetUniformLocation(myCustomShader.shaderProgram, "model");
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-	projection = glm::perspective(glm::radians(45.0f), (float)retina_width / (float)retina_height, 0.1f, 1000.0f);
-	projectionLoc = glGetUniformLocation(myCustomShader.shaderProgram, "projection");
-	glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+    view = myCamera.getViewMatrix();
+    viewLoc = glGetUniformLocation(myCustomShader.shaderProgram, "view");
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 
-	lightDir = glm::vec3(0.0f, 1.0f, 1.0f);
-	lightDirLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightDir");
-	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
+    normalMatrix = glm::mat3(glm::inverseTranspose(view*model));
+    normalMatrixLoc = glGetUniformLocation(myCustomShader.shaderProgram, "normalMatrix");
+    glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
 
-	lightColor = glm::vec3(0.1f, 0.1f, 0.15f);
-	lightColorLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightColor");
-	glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
+    projection = glm::perspective(glm::radians(45.0f),
+        (float)retina_width / (float)retina_height, 0.1f, 1000.0f);
+    projectionLoc = glGetUniformLocation(myCustomShader.shaderProgram, "projection");
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
-	lightPos = glm::vec3(3.7f, 0.5f, 0.25f);	//	Slightly above actual campfire
-	lightPosLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightPos");
-	glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
+    // Directional light
+    lightDir = glm::vec3(0.0f, 1.0f, 1.0f);
+    lightDirLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightDir");
+    glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
 
-	posColor = glm::vec3(5.0f, 2.5f, 0.5f);
-	posColorLoc = glGetUniformLocation(myCustomShader.shaderProgram, "posColor");
-	glUniform3fv(posColorLoc, 1, glm::value_ptr(posColor));
+    lightColor = glm::vec3(0.1f, 0.1f, 0.15f);
+    lightColorLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightColor");
+    glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
+
+	//	Point lights
+    setupPointLights();
+
+    //	Send data to gpu
+    numPointLightsLoc = glGetUniformLocation(myCustomShader.shaderProgram, "numPointLights");
+    pointLightColorLoc = glGetUniformLocation(myCustomShader.shaderProgram, "pointLightColor");
+
+    glUniform1i(numPointLightsLoc, numActiveLights);
+    glUniform3fv(pointLightColorLoc, 1, glm::value_ptr(pointLightColor));
+
+    for (int i = 0; i < numActiveLights; i++) {
+        std::string uniformName = "pointLightPositions[" + std::to_string(i) + "]";
+        GLuint location = glGetUniformLocation(myCustomShader.shaderProgram, uniformName.c_str());
+        glm::vec4 lightPosEye = view * glm::vec4(pointLightPositions[i], 1.0f);
+        glUniform3fv(location, 1, glm::value_ptr(glm::vec3(lightPosEye)));
+    }
 }
 
 void initFBO() {
@@ -487,12 +554,12 @@ void initFBO() {
 }
 
 void initSkybox() {
-	faces.push_back("skybox/arctic_rt.tga");
-	faces.push_back("skybox/arctic_lf.tga");
-	faces.push_back("skybox/arctic_up.tga");
-	faces.push_back("skybox/arctic_dn.tga");
-	faces.push_back("skybox/arctic_bk.tga");
-	faces.push_back("skybox/arctic_ft.tga");
+	faces.push_back("skybox/purplenebula_rt.tga");
+	faces.push_back("skybox/purplenebula_lf.tga");
+	faces.push_back("skybox/purplenebula_up.tga");
+	faces.push_back("skybox/purplenebula_dn.tga");
+	faces.push_back("skybox/purplenebula_bk.tga");
+	faces.push_back("skybox/purplenebula_ft.tga");
 	mySkyBox.Load(faces);
 }
 
@@ -535,61 +602,61 @@ int frameCount = 0;
 int lastFPSTime = 0;
 
 void renderScene() {
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	double currentTimeStamp = glfwGetTime();
-	double deltaTime = currentTimeStamp - lastTimeStamp;
-	lastTimeStamp = currentTimeStamp;
-	delta = static_cast<float>(deltaTime * cameraSpeed);
+    double currentTimeStamp = glfwGetTime();
+    double deltaTime = currentTimeStamp - lastTimeStamp;
+    lastTimeStamp = currentTimeStamp;
+    delta = static_cast<float>(deltaTime * cameraSpeed);
 
-	frameCount++;
-	if (currentTimeStamp - lastFPSTime >= 1.0) {
-		double fps = (double)frameCount / (currentTimeStamp - lastFPSTime);
-		std::cout << "FPS: " << fps << std::endl;
-		lastFPSTime = currentTimeStamp;
-		frameCount = 0;
-	}
+    frameCount++;
+    if (currentTimeStamp - lastFPSTime >= 1.0) {
+        double fps = (double)frameCount / (currentTimeStamp - lastFPSTime);
+        std::cout << "FPS: " << fps << std::endl;
+        lastFPSTime = currentTimeStamp;
+        frameCount = 0;
+    }
 
-	// Shadow map pass
-	depthShader.useShaderProgram();
-	glUniformMatrix4fv(glGetUniformLocation(depthShader.shaderProgram, "lightSpaceTrMatrix"),
-		1, GL_FALSE, glm::value_ptr(computeLightSpaceTrMatrix()));
-	glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
-	glClear(GL_DEPTH_BUFFER_BIT);
-	drawObjects(depthShader, true);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // Shadow map pass
+    depthShader.useShaderProgram();
+    glUniformMatrix4fv(glGetUniformLocation(depthShader.shaderProgram, "lightSpaceTrMatrix"),
+        1, GL_FALSE, glm::value_ptr(computeLightSpaceTrMatrix()));
+    glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    drawObjects(depthShader, true);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-	// Main render pass
-	glViewport(0, 0, retina_width, retina_height);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	myCustomShader.useShaderProgram();
+    // Main render pass
+    glViewport(0, 0, retina_width, retina_height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    myCustomShader.useShaderProgram();
 
-	view = myCamera.getViewMatrix();
-	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    view = myCamera.getViewMatrix();
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 
-	normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
-	glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+    // UPDATE: Add this line to update point lights each frame
+    updatePointLights();
 
-	glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
+    normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
+    glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(normalMatrix));
 
-	glm::vec4 lightPosEye = view * glm::vec4(lightPos, 1.0f);
-	glUniform3fv(lightPosLoc, 1, glm::value_ptr(glm::vec3(lightPosEye)));
+    glUniform3fv(lightDirLoc, 1, glm::value_ptr(glm::inverseTranspose(glm::mat3(view)) * lightDir));
 
-	projection = glm::perspective(glm::radians(45.0f), (float)retina_width / (float)retina_height, 0.1f, 1000.0f);
-	glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+    projection = glm::perspective(glm::radians(45.0f),
+        (float)retina_width / (float)retina_height, 0.1f, 1000.0f);
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
-	glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
-	glUniform3fv(posColorLoc, 1, glm::value_ptr(posColor));
+    glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
 
-	glActiveTexture(GL_TEXTURE3);
-	glBindTexture(GL_TEXTURE_2D, depthMapTexture);
-	glUniform1i(glGetUniformLocation(myCustomShader.shaderProgram, "shadowMap"), 3);
-	glUniformMatrix4fv(glGetUniformLocation(myCustomShader.shaderProgram, "lightSpaceTrMatrix"),
-			1, GL_FALSE, glm::value_ptr(computeLightSpaceTrMatrix()));
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, depthMapTexture);
+    glUniform1i(glGetUniformLocation(myCustomShader.shaderProgram, "shadowMap"), 3);
+    glUniformMatrix4fv(glGetUniformLocation(myCustomShader.shaderProgram, "lightSpaceTrMatrix"),
+            1, GL_FALSE, glm::value_ptr(computeLightSpaceTrMatrix()));
 
-	drawObjects(myCustomShader, false);
-	mySkyBox.Draw(skyboxShader, view, projection);
+    drawObjects(myCustomShader, false);
+    mySkyBox.Draw(skyboxShader, view, projection);
 }
 
 void cleanup() {
