@@ -54,6 +54,7 @@ GLuint shadowMapFBO;
 GLuint depthMapTexture;
 
 bool sprint = false;
+double globalDeltaTime = 0.0f;
 
 bool isPosOn;
 // glm::vec3 lightPos;
@@ -92,10 +93,11 @@ bool isCinematic = false;
 float cinematicTime;
 
 // Models
-gps::Model3D teapot;	//	for showcasing collisions
-gps::Model3D ground;	//	for showcasing collisions
 gps::Model3D snow_town;
 gps::Model3D campfire;
+gps::Model3D flag;
+gps::Model3D pole;
+glm::vec3 flagPosition = glm::vec3(13.f, -1.1f, 6.8f);
 
 gps::Shader myCustomShader;
 gps::Shader depthShader;
@@ -168,20 +170,6 @@ bool checkPlayerCollision(const gps::BoundingBox& playerBox, std::string* collid
 void initSceneObjects() {
     sceneObjects.clear();
 
-    // Teapot
-    // glm::mat4 teapotModel = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
-    // sceneObjects.emplace_back(&teapot, teapotModel, "Teapot", true);
-    //
-    // // Ground
-    // glm::mat4 groundModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f));
-    // groundModel = glm::scale(groundModel, glm::vec3(0.5f));
-    // sceneObjects.emplace_back(&ground, groundModel, "Ground", true);
-
-	//	Cottage
-	// glm::mat4 cottageModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.f, 5.f));
-	// cottageModel = glm::scale(cottageModel, glm::vec3(0.02f));
-	// sceneObjects.emplace_back(&snow_cottage, cottageModel, "SnowCottage", false);
-
     //	Town scene
 	glm::mat4 townModel = glm::translate(glm::mat4(1.0f), glm::vec3(-10.0f, 0.0f, 2.0f));
 	townModel = glm::scale(townModel, glm::vec3(4.f));
@@ -191,15 +179,40 @@ void initSceneObjects() {
 	glm::mat4 campfireModel = glm::translate(glm::mat4(1.0f), glm::vec3(3.7f, -0.85f, 0.25f));
 	campfireModel = glm::scale(campfireModel, glm::vec3(0.05f));
 	sceneObjects.emplace_back(&campfire, campfireModel, "campfire", true);
+	//	Flag+pole
+	glm::mat4 poleModel = glm::translate(glm::mat4(1.0f), flagPosition);
+	poleModel = glm::rotate(poleModel, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	poleModel = glm::scale(poleModel, glm::vec3(0.3f));
+	sceneObjects.emplace_back(&pole, poleModel, "pole", true);
+	flagPosition.z += 0.065f;
+	flagPosition.y += 1.85f;
+	glm::mat4 flagModel = glm::translate(glm::mat4(1.0f), flagPosition);
+	flagModel = glm::rotate(flagModel, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	flagModel = glm::scale(flagModel, glm::vec3(0.3f));
+	sceneObjects.emplace_back(&flag, flagModel, "flag", true);
+
 }
 
 void updateSceneObjects() {
-    // Update teapot rotation
-    // if (!sceneObjects.empty()) {
-    //     sceneObjects[0].modelMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(angleY), glm::vec3(0.0f, 1.0f, 0.0f));
-    // }
+	float time = glfwGetTime();
 
-    // Update other dynamic objects here
+	for (auto& obj : sceneObjects) {
+		if (obj.name == "flag") {
+
+			float windSpeed = 2.0f;
+			float swing = (sin(time * windSpeed) + 1.0f) * 10.0f;
+			float currentAngle = swing + 180.0f;
+
+			glm::mat4 m = glm::mat4(1.0f);
+
+			m = glm::translate(m, flagPosition);
+			m = glm::rotate(m, glm::radians(-90.f), glm::vec3(0.f, 1.f, 0.f));	//	Align with pole
+			m = glm::rotate(m, glm::radians(currentAngle), glm::vec3(0.0f, 0.0f, 1.0f));	//	Animation
+			m = glm::scale(m, glm::vec3(0.3f));
+
+			obj.modelMatrix = m;
+		}
+	}
 }
 
 // Helper function to add objects to scene
@@ -322,7 +335,7 @@ void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 float rotationSpeed = 100.f;
-float animationSpeed = 0.01f;
+float animationSpeed = 1.5f;
 
 void processMovement() {
 	if (sprint) {
@@ -332,8 +345,8 @@ void processMovement() {
 	}
 	//	Cinematic pan across the scene
 	if (isCinematic) {
-		float zPos = 40.0f - (cinematicTime * 1.5f);
-		cinematicTime += animationSpeed;
+		cinematicTime += globalDeltaTime;
+		float zPos = 40.0f - (cinematicTime * animationSpeed);
 		myCamera.setPosition(glm::vec3(15.0f, 12.0f, zPos));
 		myCamera.rotate(-25.0f, -90.0f);
 	} else {
@@ -464,15 +477,13 @@ void initOpenGLState() {
 }
 
 void initObjects() {
-	teapot.LoadModel("models/teapot/teapot20segUT.obj", "models/teapot/");
-	ground.LoadModel("models/ground/ground.obj", "models/ground/");
 	snow_town.LoadModel("models/snow_town/snow_town.obj", "models/snow_town/");
 	campfire.LoadModel("models/campfire/campfire.obj", "models/campfire/");
+	flag.LoadModel("models/flagpole/flag.obj", "models/flagpole/");
+	pole.LoadModel("models/flagpole/pole.obj", "models/flagpole/");
 	// Initialize scene objects after loading models
 	initSceneObjects();
 
-	// Add more objects to scene
-	// addSceneObject(&test, glm::vec3(3.0f, 0.0f, 0.0f), glm::vec3(1.0f), glm::vec3(0.0f), "Test Object");
 }
 
 void initShaders() {
@@ -606,6 +617,7 @@ void renderScene() {
 
     double currentTimeStamp = glfwGetTime();
     double deltaTime = currentTimeStamp - lastTimeStamp;
+	globalDeltaTime = deltaTime;
     lastTimeStamp = currentTimeStamp;
     delta = static_cast<float>(deltaTime * cameraSpeed);
 
