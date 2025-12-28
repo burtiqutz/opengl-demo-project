@@ -1,6 +1,11 @@
 # OpenGL Demo Project
 
 A C++ OpenGL rendering mini-engine developed on Linux (Pop!_OS). This project demonstrates modern OpenGL concepts including 3D model loading, texture mapping, skyboxes, and camera movement. 
+<img width="1280" height="694" alt="image" src="https://github.com/user-attachments/assets/e953cecf-b9c7-4cb0-96e4-e27f20d50fdd" />
+<img width="1280" height="694" alt="image" src="https://github.com/user-attachments/assets/5fce2154-04f6-455b-97b4-94db0c5cdf63" />
+<img width="1280" height="694" alt="image" src="https://github.com/user-attachments/assets/075fc81d-309a-49a7-a297-48be9752d414" />
+<img width="1280" height="694" alt="image" src="https://github.com/user-attachments/assets/a13fd555-78b8-481d-87db-a0177804a869" />
+
 ## Credits & Coursework
 
 This project was developed as part of the Graphics Processing course at the Technical University of Cluj-Napoca.  
@@ -63,9 +68,15 @@ Option 2: Using Terminal (CMake)
      ```Bash
      ./opengl_demo_project
 ## Controls
-- **W / A / S / D**: Move Camera (Forward, Left, Backward, Right)
-- **Mouse**: Look around
-- **ESC**: Close Window / Quit
+| Key | Action |
+| :---: | :--- |
+| <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> | Camera movement |
+| <kbd>Mouse</kbd> | Look around |
+| <kbd>Shift</kbd> | Sprint / Fast movement |
+| <kbd>C</kbd> | Toggle Cinematic Mode |
+| <kbd>T</kbd> | Cycle Display Modes (Solid &rarr; Wireframe &rarr; Polygonal) |
+| <kbd>G</kbd> | Toggle Sun Light (On/Off) |
+| <kbd>P</kbd> | Toggle Point Lights (Lanterns) |
 ## Project structure
 - **src/**: Main C++ source files (main.cpp, Window.cpp, etc.).
 - **shaders/**: GLSL Vertex and Fragment shaders.
