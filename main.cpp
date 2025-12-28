@@ -102,7 +102,7 @@ glm::vec3 flagPosition = glm::vec3(13.f, -1.1f, 6.8f);
 gps::Shader myCustomShader;
 gps::Shader depthShader;
 
-bool wireframe = false;
+static int displayMode = 0;
 bool flatShading = false;
 
 struct SceneObject {
@@ -116,6 +116,11 @@ struct SceneObject {
 };
 
 std::vector<SceneObject> sceneObjects;
+
+gps::Shader snowShader;
+GLuint snowVAO, snowVBO;
+GLuint snowTexture;
+bool snowEnabled = false;
 
 //	Collision detection functions
 bool checkAABBCollision(const gps::BoundingBox& box1, const gps::BoundingBox& box2) {
@@ -231,6 +236,83 @@ void addSceneObject(gps::Model3D* model, const glm::vec3& position,
     sceneObjects.emplace_back(model, modelMatrix, name, hasCollision);
 }
 
+GLuint loadTexture(const char* path) {
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+
+	int width, height, nrComponents;
+	stbi_set_flip_vertically_on_load(true);
+	unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+	if (data) {
+		GLenum format;
+		if (nrComponents == 1) format = GL_RED;
+		else if (nrComponents == 3) format = GL_RGB;
+		else if (nrComponents == 4) format = GL_RGBA;
+
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		glGenerateMipmap(GL_TEXTURE_2D);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		stbi_image_free(data);
+	}
+	else {
+		std::cout << "Texture failed to load at path: " << path << std::endl;
+		stbi_image_free(data);
+	}
+
+	return textureID;
+}
+
+void initSnow() {
+	snowTexture = loadTexture("models/snowTexture2.png");
+
+	float quadVertices[] = {
+		-1.0f, 1.0f, 0.0f, 1.0f,
+		-1.0f, -1.0f, 0.0f, 0.0f,
+		1.0f, -1.0f, 1.0f, 0.0f,
+
+		-1.0f, 1.0f, 0.0f, 1.0f,
+		1.0f, -1.0f, 1.0f, 0.0f,
+		1.0f, 1.0f, 1.0f, 1.0f
+	};
+
+	glGenVertexArrays(1, &snowVAO);
+	glGenBuffers(1, &snowVBO);
+	glBindVertexArray(snowVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, snowVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+}
+
+void drawSnow() {
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
+
+	snowShader.useShaderProgram();
+
+	glUniform1f(glGetUniformLocation(snowShader.shaderProgram, "time"), (float)glfwGetTime());
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, snowTexture);
+	glUniform1i(glGetUniformLocation(snowShader.shaderProgram, "snowTexture"), 0);
+
+	glBindVertexArray(snowVAO);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+
+	glEnable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+}
+
 //	Main logic
 GLenum glCheckError_(const char *file, int line) {
 	GLenum errorCode;
@@ -293,11 +375,21 @@ void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int
 		processLights();
 	}
 	if (key == GLFW_KEY_T && action == GLFW_PRESS) {
-		wireframe = !wireframe;
-		if (wireframe) {
-			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		} else {
-			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		displayMode++;
+		if (displayMode > 2) displayMode = 0;
+
+		switch (displayMode) {
+			case 0: // Solid / Smooth
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+				break;
+
+			case 1: // Wireframe
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+				break;
+
+			case 2: // Polygonal (i think lol)
+				glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
+				break;
 		}
 	}
 	if (key == GLFW_KEY_C && action == GLFW_PRESS) {
@@ -313,6 +405,9 @@ void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int
 	}
 	if (key == GLFW_KEY_LEFT_SHIFT && action == GLFW_PRESS) {
 		sprint = !sprint;
+	}
+	if (pressedKeys[GLFW_KEY_M]) {
+		snowEnabled = !snowEnabled;
 	}
 }
 
@@ -474,6 +569,8 @@ void initOpenGLState() {
 	glCullFace(GL_BACK);
 	glFrontFace(GL_CCW);
 	glEnable(GL_FRAMEBUFFER_SRGB);
+	glEnable(GL_PROGRAM_POINT_SIZE);
+	glPointSize(3.0f);
 }
 
 void initObjects() {
@@ -493,10 +590,12 @@ void initShaders() {
 	depthShader.useShaderProgram();
 	skyboxShader.loadShader("shaders/skyboxShader.vert", "shaders/skyboxShader.frag");
 	skyboxShader.useShaderProgram();
+	snowShader.loadShader("shaders/snow.vert", "shaders/snow.frag");
+	snowShader.useShaderProgram();
 }
 
 void initUniforms() {
-    myCustomShader.useShaderProgram();  // Make sure shader is active!
+    myCustomShader.useShaderProgram();
 
     isSunOn = true;
     isPosOn = true;
@@ -647,7 +746,6 @@ void renderScene() {
     view = myCamera.getViewMatrix();
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 
-    // UPDATE: Add this line to update point lights each frame
     updatePointLights();
 
     normalMatrix = glm::mat3(glm::inverseTranspose(view * model));
@@ -669,6 +767,10 @@ void renderScene() {
 
     drawObjects(myCustomShader, false);
     mySkyBox.Draw(skyboxShader, view, projection);
+
+	if (snowEnabled) {
+		drawSnow();
+	}
 }
 
 void cleanup() {
@@ -685,6 +787,7 @@ int main(int argc, const char * argv[]) {
 	initOpenGLState();
 	initObjects();
 	initShaders();
+	initSnow();		//	snow uniforms
 	initUniforms();
 	initFBO();
 	initSkybox();
