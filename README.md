@@ -77,6 +77,7 @@ Option 2: Using Terminal (CMake)
 | <kbd>T</kbd> | Cycle Display Modes (Solid &rarr; Wireframe &rarr; Polygonal) |
 | <kbd>G</kbd> | Toggle Sun Light (On/Off) |
 | <kbd>P</kbd> | Toggle Point Lights (Lanterns) |
+| <kbd>M</kbd> | Toggle Snowfall |
 ## Project structure
 - **src/**: Main C++ source files (main.cpp, Window.cpp, etc.).
 - **shaders/**: GLSL Vertex and Fragment shaders.
