@@ -48,9 +48,10 @@ Option 1: Using CLion (Recommended)
   2. Open CLion.
   3. Select File > Open and choose the project folder opengl-demo-project.
   4. CLion will automatically detect the CMakeLists.txt file and load the project configuration.
-  5. Click the Build icon (Hammer) to compile.
-  6. Click the Run icon (Play) to start the application.
-**!Important:** You have to set working directory as `../`
+  5. Set working directory as `../`
+  6. Click the Build icon (Hammer) to compile.
+  7. Click the Run icon (Play) to start the application.
+
 Option 2: Using Terminal (CMake)
 
   1. Clone the repository (SSH):
