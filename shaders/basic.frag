@@ -40,9 +40,11 @@ in vec2 fragTexCoords;
 uniform sampler2D shadowMap;
 in vec4 fragPosLightSpace;
 
-void computeDirectionalLight(){
+//flat shading
+uniform int isFlatShading;
+
+void computeDirectionalLight(vec3 normalEye){
     vec3 cameraPosEye = vec3(0.0f);//in eye coordinates, the viewer is situated at the origin
-    vec3 normalEye = normalize(fNormal);
     vec3 lightDirN = normalize(lightDir);
 
     //compute view direction
@@ -58,16 +60,12 @@ void computeDirectionalLight(){
     diffuse += max(dot(normalEye, lightDirN), 0.0f) * lightColor;
 
     //compute specular light
-    vec3 reflection = reflect(-lightDirN, normalEye);
-    float specCoeff = pow(max(dot(viewDirN, reflection), 0.0f), shininess);
+    float specCoeff = pow(max(dot(normalEye, halfVector), 0.0f), shininess);
     specular += specularStrength * specCoeff * lightColor;
 }
 
-void computePositionalLight(vec3 lightPos){
+void computePositionalLight(vec3 lightPos, vec3 normalEye){
     vec3 cameraPosEye = vec3(0.0f);//in eye coordinates, the viewer is situated at the origin
-
-    //transform normal
-    vec3 normalEye = normalize(fNormal);
 
     //compute light direction
     vec3 lightDirN = normalize(lightPos - fPosEye.xyz);
@@ -94,11 +92,11 @@ void computePositionalLight(vec3 lightPos){
     specularPoint += att * specularStrength * specCoeff * pointLightColor;
 }
 
-void computeLightComponents()
+void computeLightComponents(vec3 normalEye)
 {
-    computeDirectionalLight();
+    computeDirectionalLight(normalEye);
     for(int i = 0; i < numPointLights; i++){
-        computePositionalLight(pointLightPositions[i]);
+        computePositionalLight(pointLightPositions[i], normalEye);
     }
 }
 
@@ -124,7 +122,23 @@ float computeFog() {
 
 void main()
 {
-    computeLightComponents();
+    vec3 normalEye;
+
+    if (isFlatShading == 1) {
+        // --- FLAT SHADING CALCULATION ---
+        // 1. Get the change in position horizontally and vertically
+        vec3 xTangent = dFdx(fPosEye.xyz);
+        vec3 yTangent = dFdy(fPosEye.xyz);
+
+        // 2. The cross product gives the vector sticking straight out of the triangle
+        normalEye = normalize(cross(xTangent, yTangent));
+    } else {
+        // --- SMOOTH SHADING (Default) ---
+        normalEye = normalize(fNormal);
+    }
+
+    // Now use 'normalEye' for all your lighting calculations
+    computeLightComponents(normalEye);
 
     //	we dont use alpha blending, use just rgb values
     vec3 texDiffuse = texture(diffuseTexture, fragTexCoords).rgb;

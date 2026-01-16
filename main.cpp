@@ -122,6 +122,11 @@ GLuint snowVAO, snowVBO;
 GLuint snowTexture;
 bool snowEnabled = false;
 
+//	flat shading
+GLint isFlatShading = 0; // 0 = Smooth, 1 = Flat
+GLuint flatShadingLoc;
+
+//=====================================================================================================
 //	Collision detection functions
 bool checkAABBCollision(const gps::BoundingBox& box1, const gps::BoundingBox& box2) {
     return (box1.min.x <= box2.max.x && box1.max.x >= box2.min.x) &&
@@ -409,6 +414,17 @@ void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int
 	if (pressedKeys[GLFW_KEY_M]) {
 		snowEnabled = !snowEnabled;
 	}
+	if (pressedKeys[GLFW_KEY_F]) {
+		isFlatShading = !isFlatShading;
+
+		myCustomShader.useShaderProgram();
+		glUniform1i(flatShadingLoc, isFlatShading);
+
+		if(isFlatShading)
+			std::cout << "Shading: FLAT (Faceted)" << std::endl;
+		else
+			std::cout << "Shading: SMOOTH" << std::endl;
+	}
 }
 
 void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
@@ -625,6 +641,9 @@ void initUniforms() {
     lightColor = glm::vec3(0.1f, 0.1f, 0.15f);
     lightColorLoc = glGetUniformLocation(myCustomShader.shaderProgram, "lightColor");
     glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
+
+	flatShadingLoc = glGetUniformLocation(myCustomShader.shaderProgram, "isFlatShading");
+	glUniform1i(flatShadingLoc, isFlatShading);
 
 	//	Point lights
     setupPointLights();
